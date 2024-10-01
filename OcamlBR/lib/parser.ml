@@ -32,13 +32,14 @@ let pint =
   let rest = take_while1 Char.is_digit in
   lift2 (fun sign rest -> Int.of_string (sign ^ rest)) sign rest >>| fun x -> Int x
 ;;
+
 let pbool =
   choice [ pstoken "true" *> return true; pstoken "false" *> return false ]
   >>| fun x -> Bool x
 ;;
+
 let pstr = char '"' *> take_till (Char.equal '"') <* char '"' >>| fun x -> String x
 let punit = pstoken "()" >>| fun _ -> Unit
-
 let const = choice [ pint; pbool; pstr; punit ]
 
 
@@ -61,8 +62,13 @@ let pconst = const >>| fun x -> PConst x
 
 let pEconst = const >>| fun x -> Econst x
 let pEvar = varname >>| fun x -> Evar x
-let peapp e = chain e (return (fun e1 e2 -> Efun_application (e1, e2)))
 
+let peapp e =
+  let func_call =
+    lift2 (fun fn arg -> Efun_application (fn, arg)) e e
+  in
+  chain e (return (fun e1 e2 -> Efun_application (e1, e2))) <|> func_call
+;;
 
 
 let ptint = pstoken "int" *> return (Int 0)
@@ -118,7 +124,7 @@ let plet pexpr =
   pstoken "let"
   *> lift4
        (fun r id e1 e2 -> Elet (r, id, e1, e2))
-       (pstoken "rec" *> return Rec <|> return NonRec)
+       (pstoken "rec" *> return Recursive <|> return Non_recursive)
        (pparens varname <|> varname)
        (pstoken "=" *> pexpr <|> pbody pexpr)
        (pstoken "in" *> pexpr <|> return (Econst Unit))
@@ -135,3 +141,10 @@ let pexpr =
     let expr = plet expr <|> expr in
     expr)
   ;;
+
+
+let parse str =
+  match parse_string ~consume:All pexpr str with
+  | Ok ast -> print_endline (show_expr ast)
+  | Error msg -> Printf.printf "Parsing error: %s\n" msg
+;;
