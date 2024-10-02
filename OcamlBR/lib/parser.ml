@@ -117,17 +117,16 @@ let ppattern =
 
 let plet pexpr =
   let rec pbody pexpr =
-    ppattern >>= function
-    | PVar id -> pbody pexpr <|> (pstoken "=" *> pexpr >>| fun e -> Efun ([id], e))
-    | _ -> failwith "Only variable patterns are supported"
+    ppattern >>= fun id -> pbody pexpr <|> pstoken "=" *> pexpr >>| fun e -> Efun (id, e)
   in
   pstoken "let"
   *> lift4
-       (fun r id e1 e2 -> Elet (r, id, e1, e2))
+       (fun r id e1 e2 -> Elet ((r, id, e1), e2))
        (pstoken "rec" *> return Recursive <|> return Non_recursive)
        (pparens varname <|> varname)
        (pstoken "=" *> pexpr <|> pbody pexpr)
-       (pstoken "in" *> pexpr <|> return (Econst Unit))
+       (pstoken "in" *> pexpr <|> return EUnit)
+;;
 
 
 let pexpr =
@@ -146,5 +145,7 @@ let pexpr =
 let parse str =
   match parse_string ~consume:All pexpr str with
   | Ok ast -> print_endline (show_expr ast)
-  | Error msg -> Printf.printf "Parsing error: %s\n" msg
+  | Error msg -> Format.eprintf "Parsing error: %s\n" msg
 ;;
+
+let parse_expr = parse_string ~consume:Consume.All (pexpr <* skip_while Char.is_whitespace)

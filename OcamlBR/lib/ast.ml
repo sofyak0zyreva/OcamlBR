@@ -4,6 +4,7 @@
 
 type const =
   | Int of int
+  | Char of char 
   | String of string
   | Bool of bool
   | Unit
@@ -44,6 +45,8 @@ type rec_flag =
 type pattern =
   | PVar of id
   | PConst of const
+  | Ptuple of pattern list
+  | PAny
 [@@deriving show { with_path = false }]
 
 type expr =
@@ -57,11 +60,14 @@ type expr =
   | Elist of expr list (* expressions [E0; ..; En], n >= 0 *)
   | Ebin_op of bin_op * expr * expr (* E0 bin_op E1, e.g. 1 + 3 *)
   | Eun_op of un_op * expr (* E0 un_op E1, e.g. Negative 2, Not true *)
-  | Elet of rec_flag * id * expr * expr
+  | Elet of decl * expr
   (* let (rec) P1 = E1 and P2 = E2 and ... and Pn = En in E, e.g. let x = 5 *)
   | Efun_application of expr * expr (* E0 E1, e.g. f x *)
-  | Efun of id list * expr
-(* anonymous functions, e.g. fun x y -> x + 1 - y, arguments num >= 1  *)
-(* should probably change id to pattern later *)
+  | Efun of pattern * expr
+  (* anonymous functions, e.g. fun x y -> x + 1 - y, arguments num >= 1  *)
+  (* should probably change id to pattern later *)
+  | EUnit
 [@@deriving show { with_path = false }]
+
+and decl = rec_flag * id * expr
 
