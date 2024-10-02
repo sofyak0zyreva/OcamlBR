@@ -67,6 +67,8 @@ type expr =
   (* anonymous functions, e.g. fun x y -> x + 1 - y, arguments num >= 1  *)
   (* should probably change id to pattern later *)
   | EUnit
+  (* Represents the unit value (), 
+  used in expressions that don't return a meaningful value or to signify the absence of a specific value. *)
 [@@deriving show { with_path = false }]
 
 and decl = rec_flag * id * expr
