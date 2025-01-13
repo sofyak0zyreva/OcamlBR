@@ -11,6 +11,53 @@ let parse str =
   | Ok ast -> Stdlib.print_endline (show_structure ast)
   | _ -> Stdlib.print_endline "Parsing failed"
 ;;
+
+let%expect_test _ =
+  let _ =
+    parse {|
+let temp =
+  let f = fun x -> x in
+  (f 1, f true)
+ |}
+  in
+  [%expect {|  |}]
+;;
+
+(*
+let%expect_test _ =
+  let _ =
+    parse {|
+    let wrap f = if 1 = 1 then f else f
+
+
+let test10 a b c d e f g h i j = a + b + c + d + e + f + g + h + i + j
+
+  let rez =
+      (wrap test10 1 10 100 1000 10000 100000 1000000 10000000 100000000 1000000000)
+
+  |}
+  in
+  [%expect {|  |}]
+;;
+
+
+let%expect_test _ =
+  let _ =
+    parse {|
+   let wrap f = if 1 = 1 then f else f
+
+let test10 a b c d e f g h i j = a + b + c + d + e + f + g + h + i + j
+
+  let rez =
+      (wrap test10 1 10 100 1000 10000 100000 1000000 10000000 100000000 1000000000)
+
+  |}
+  in
+  [%expect {|  |}]
+;;
+
+*)
+
 (*
 (*factorial*)
 let%expect_test _ =
