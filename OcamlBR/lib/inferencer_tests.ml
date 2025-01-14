@@ -225,3 +225,35 @@ let%expect_test _ =
   in
   [%expect {| val f : (int * bool) -> (bool -> int) |}]
 ;;
+
+
+
+let%expect_test "do_not_type_001" =
+  let _ = infer_from_file "do_not_type/001.ml" in
+  [%expect {| Infer error: Undefined variable "fac" |}]
+;;
+
+let%expect_test "do_not_type_002if" =
+  let _ = infer_from_file "do_not_type/002if.ml" in
+  [%expect {| Infer error: Unification failed on int and bool  |}]
+;;
+
+let%expect_test "do_not_type_003occurs" =
+  let _ = infer_from_file "do_not_type/003occurs.ml" in
+  [%expect {| Infer error: Occurs check failed |}]
+;;
+
+let%expect_test "do_not_type_004let_poly" =
+  let _ = infer_from_file "do_not_type/004let_poly.ml" in
+  [%expect {| Infer error: Unification failed on int and bool |}]
+;;
+
+let%expect_test "do_not_type_015tuples" =
+  let _ = infer_from_file "do_not_type/015tuples.ml" in
+  [%expect {| Infer error: Ill left-hand side : only variables are allowed  |}]
+;;
+
+let%expect_test "do_not_type_099" =
+  let _ = infer_from_file "do_not_type/099.ml" in
+  [%expect {| Infer error: Ill left-hand side : only variables are allowed  |}]
+;;
