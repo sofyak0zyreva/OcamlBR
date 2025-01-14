@@ -1,1 +1,1 @@
-manytests/do_not_type/015tuples.ml
+../../../../manytests/do_not_type/015tuples.ml

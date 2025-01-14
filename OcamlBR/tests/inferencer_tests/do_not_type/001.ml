@@ -1,1 +1,1 @@
-manytests/do_not_type/001.ml
+../../../../manytests/do_not_type/001.ml
