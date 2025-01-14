@@ -19,57 +19,81 @@ let infer_from_file file_name =
 
 let%expect_test "typed_001fac" =
   let _ = infer_from_file "typed/001fac.ml" in
-  [%expect {| val ... |}]
+  [%expect {| 
+  val fac : int -> int
+  val main : int|}]
 ;;
 
 let%expect_test "typed_002fac" =
   let _ = infer_from_file "typed/002fac.ml" in
-  [%expect {| val ... |}]
+  [%expect {| 
+  val fac_cps : int -> ((int -> int) -> int)
+  val main : int|}]
 ;;
 
 let%expect_test "typed_003fib" =
   let _ = infer_from_file "typed/003fib.ml" in
-  [%expect {| val ... |}]
+  [%expect {| 
+  val fib : int -> int
+  val fib_acc : int -> (int -> (int -> int))
+  val main : int |}]
 ;;
 
 let%expect_test "typed_004manyargs" =
   let _ = infer_from_file "typed/004manyargs.ml" in
-  [%expect {| val ... |}]
+  [%expect {| 
+  val main : int
+  val test10 : int -> (int -> (int -> (int -> (int -> (int -> (int -> (int -> (int -> (int -> int)))))))))
+  val test3 : int -> (int -> (int -> int))
+  val wrap : '0 -> '0 |}]
 ;;
 
 let%expect_test "typed_005fix" =
   let _ = infer_from_file "typed/005fix.ml" in
-  [%expect {| val ... |}]
+  [%expect {| 
+  val fac : (int -> int) -> (int -> int)
+  val fix : ((int -> int) -> (int -> int)) -> (int -> int)
+  val main : int |}]
 ;;
 
 let%expect_test "typed_006partial" =
   let _ = infer_from_file "typed/006partial.ml" in
-  [%expect {| val ... |}]
+  [%expect {|
+  val foo : int -> int
+  val main : int |}]
 ;;
 
 let%expect_test "typed_006partial2" =
   let _ = infer_from_file "typed/006partial2.ml" in
-  [%expect {| val ... |}]
+  [%expect {|
+  val foo : int -> (int -> (int -> int))
+  val main : int |}]
 ;;
 
 let%expect_test "typed_006partial3" =
   let _ = infer_from_file "typed/006partial3.ml" in
-  [%expect {| val ... |}]
+  [%expect {| 
+  val foo : int -> (int -> (int -> unit))
+  val main : int |}]
 ;;
 
 let%expect_test "typed_007order" =
   let _ = infer_from_file "typed/007order.ml" in
-  [%expect {| val ... |}]
+  [%expect {| 
+  val _start : unit -> (unit -> (int -> (unit -> (int -> (int -> (unit -> (int -> (int -> int))))))))
+  val main : unit |}]
 ;;
 
 let%expect_test "typed_008ascription" =
   let _ = infer_from_file "typed/008ascription.ml" in
-  [%expect {| val ... |}]
+  [%expect {| 
+  val addi : ('2 -> (bool -> int)) -> (('2 -> bool) -> ('2 -> int))
+  val main : int |}]
 ;;
 
 let%expect_test "typed_009let_poly" =
   let _ = infer_from_file "typed/009let_poly.ml" in
-  [%expect {| val ... |}]
+  [%expect {| val temp : (int * bool) |}]
 ;;
 
 let%expect_test "typed_010sukharev" =
@@ -84,7 +108,15 @@ let%expect_test "typed_015tuples" =
 
 let%expect_test "typed_016lists" =
   let _ = infer_from_file "typed/016lists.ml" in
-  [%expect {| val ... |}]
+  [%expect {|
+  val append : (int * int) list -> ((int * int) list -> (int * int) list)
+  val cartesian : int list -> (int list -> (int * int) list)
+  val concat : (int * int) list list -> (int * int) list
+  val iter : (int -> unit) -> (int list -> unit)
+  val length : (int * int) list -> int
+  val length_tail : '16 list -> int
+  val main : int
+  val map : (int -> (int * int)) -> (int list -> (int * int) list) |}]
 ;;
 
 
@@ -117,7 +149,7 @@ let%expect_test _ =
 
 let%expect_test _ =
   let _ = infer_program_test {|let rec x = 1+ x|} in
-  [%expect {| val x : int |}]
+  [%expect {| Infer error: Ill right-hand side of let rec  |}]
 ;;
 
 let%expect_test _ =
@@ -192,213 +224,4 @@ let%expect_test _ =
     infer_program_test {|let f = fun ((3, true): int*bool) x -> if x then 4 else 0  |}
   in
   [%expect {| val f : (int * bool) -> (bool -> int) |}]
-;;
-
-
-
-
-
-
-(*delete after*)
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {| 
-    let rec fac n = if n<=1 then 1 else n * fac (n-1)
-
-let main =
-  let () = print_int (fac 4) in
-  0
-  |}
-  in
-  [%expect {||}]
-;;
-
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {|
-    let rec fac_cps n k =
-  if n=1 then k 1 else
-  fac_cps (n-1) (fun p -> k (p*n))
-
-let main =
-  let () = print_int (fac_cps 4 (fun print_int -> print_int)) in
-  0
-
-  |}
-  in
-  [%expect {|  |}]
-;;
-
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {|
-    let rec fib_acc a b n =
-  if n=1 then b
-  else
-    let n1 = n-1 in
-    let ab = a+b in
-    fib_acc b ab n1
-
-let rec fib n =
-  if n<2
-  then n
-  else fib (n - 1) + fib (n - 2) 
-
-let main =
-  let () = print_int (fib_acc 0 1 4) in
-  let () = print_int (fib 4) in
-  0
-
- |}
-  in
-  [%expect {| |}]
-;;
-
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {|
-    let wrap f = if 1 = 1 then f else f
-
-let test3 a b c =
-  let a = print_int a in
-  let b = print_int b in
-  let c = print_int c in
-  0
-
-let test10 a b c d e f g h i j = a + b + c + d + e + f + g + h + i + j
-
-let main =
-  let rez =
-      ((wrap test10) 1 10 100 1000 10000 100000 1000000 10000000 100000000 1000000000)
-  in
-  let () = print_int rez in
-  let temp2 = wrap test3 1 10 100 in
-  0
-
-  |}
-  in
-  [%expect {|  |}]
-;;
-
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {|
-
-let test10 a b c d e f g h i j = a + b + c + d + e + f + g + h + i + j
-
-  let rez =
-      (test10 1 10 100 1000 10000 100000 1000000 10000000 100000000 1000000000)
-
-  |}
-  in
-  [%expect {|  |}]
-;;
-
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {|
-    let rec fix f x = f (fix f) x
-
-let fac self n = if n<=1 then 1 else n * self (n-1)
-
-let main =
-  let () = print_int (fix fac 6) in
-  0
-
- |}
-  in
-  [%expect {|  |}]
-;;
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {|
-let foo b = if b then (fun foo -> foo+2) else (fun foo -> foo*10)
-
-let foo x = foo true (foo false (foo true (foo false x)))
-let main =
-  let () = print_int (foo 11) in
-  0
- |}
-  in
-  [%expect {|  |}]
-;;
-
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {|
-let _start () () a () b _c () d __ =
-  let () = print_int (a+b) in
-  let () = print_int __ in
-  a*b / _c + d
-
-let main =
-  print_int (_start (print_int 1) (print_int 2) 3 (print_int 4) 100 1000 (print_int (-1)) 10000 (-555555))
- |}
-  in
-  [%expect {|  |}]
-;;
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {|
-
-    let addi = fun f g x -> (f x (g x: bool) : int)
-
-    let main =
-      let () = print_int (addi (fun x b -> if b then x+1 else x*2) (fun _start -> _start/2 = 0) 4) in
-      0
- |}
-  in
-  [%expect {|  |}]
-;;
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {|
-let temp =
-  let f = fun x -> x in
-  (f 1, f true)
- |}
-  in
-  [%expect {|  |}]
-;;
-
-
-let%expect_test _ =
-  let _ =
-    infer_program_test {|
-let _1 = fun x y (a, _) -> (x + y - a) = 1
-
-let _2 =
-    let x, Some f = 1, Some ( ( + ) 4 )
-    in f x
-
-let _3 =  Some (1, "hi")
-
-let _4 = let rec f x = f 5 in f
-
-let _5 =
-    let id x = x in
-    match Some id with
-      | Some f -> let _ = f "42" in f 42
-      | None -> 0
-
-let _6 = fun arg -> match arg with Some x -> let y = x in y
-
-let int_of_option = function Some x -> x | None -> 0
-
-let _42 = function 42 -> true | _ -> false
-
-let id1, id2 = let id x = x in (id, id)
- |}
-  in
-  [%expect {|  |}]
 ;;
