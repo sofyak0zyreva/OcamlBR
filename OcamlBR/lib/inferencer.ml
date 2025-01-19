@@ -108,9 +108,8 @@ module Type = struct
       occurs_in v fst || occurs_in v snd || List.exists (occurs_in v) rest
     | TList t -> occurs_in v t
     | TOption t -> occurs_in v t
+    | TRecord _ -> false
   ;;
-
-  (* | TRecord _ -> false *)
 
   (* computes the set of all type variables in a given type; primarily used to generalize types during type inference *)
   let type_vars =
@@ -121,7 +120,7 @@ module Type = struct
       | TList t -> helper acc t
       | TTuple (fst, snd, rest) -> List.fold_left helper acc (fst :: snd :: rest)
       | TOption t -> helper acc t
-      (* | TRecord _ -> acc *)
+      | TRecord _ -> acc
     in
     helper VarSet.empty
   ;;
@@ -137,7 +136,7 @@ module Subst : sig
   val compose : t -> t -> t R.t
   val compose_all : t list -> t R.t
   val remove : t -> type_var -> t
-  (* val pp_subst : Format.formatter -> t -> unit *)
+  val pp_subst : Format.formatter -> t -> unit
 end = struct
   open R
   open R.Syntax
@@ -145,10 +144,10 @@ end = struct
 
   type t = (type_var, ty, Int.comparator_witness) Map.t
 
-  (* let pp_subst ppf sub =
-     Base.Map.iteri sub ~f:(fun ~key ~data ->
-     Stdlib.Format.fprintf ppf "[%d = %a] " key pp_ty data)
-     ;; *)
+  let pp_subst ppf sub =
+    Base.Map.iteri sub ~f:(fun ~key ~data ->
+      Stdlib.Format.fprintf ppf "[%d = %a] " key pp_ty data)
+  ;;
 
   let empty = Map.empty (module Int)
 
@@ -175,7 +174,7 @@ end = struct
       | TList t -> TList (helper t)
       | TPrim _ as ty -> ty
       | TOption t -> TOption (helper t)
-      (* | TRecord _ as ty -> ty *)
+      | TRecord _ as ty -> ty
     in
     helper
   ;;
@@ -209,7 +208,7 @@ end = struct
         compose acc s)
     | TList t1, TList t2 -> unify t1 t2
     | TOption t1, TOption t2 -> unify t1 t2
-    (* | TRecord n1, TRecord n2 when String.equal n1 n2 -> return empty *)
+    | TRecord n1, TRecord n2 when String.equal n1 n2 -> return empty
     | _, _ -> fail (`Unification_failed (ty1, ty2))
 
   (* extends a substitution with a new mapping for variable [v] *)
@@ -264,36 +263,64 @@ module Scheme = struct
   (* let pp = pp_scheme *)
 end
 
-(* let ty_c (t1 : ty) (t2 : ty) = t1 = t2 *)
+module KeyComparator = struct
+  module T = struct
+    type t = string * type_var
+
+    let compare (_, int1) (_, int2) = Int.compare int1 int2
+
+    let sexp_of_t (s, i) =
+      Base.Sexp.List [ Base.Sexp.Atom s; Base.Sexp.Atom (Int.to_string i) ]
+    ;;
+  end
+
+  include T
+  include Base.Comparator.Make (T)
+end
+
+let ty_c (t1 : ty) (t2 : ty) = t1 = t2
 
 module RecordEnv = struct
-  (* open R
-     open R.Syntax
-  *)
-  open Base
+  open R
+  open R.Syntax
 
-  type t = (string, (string * ty) list, String.comparator_witness) Map.t
+  type t_ordered =
+    (string * type_var, (string * ty) list, KeyComparator.comparator_witness) Base.Map.t
 
-  let empty : t = Map.empty (module String)
+  let empty_ordered = Base.Map.empty (module KeyComparator)
 
-  (* let find_record (env : t) (name : string) : (string * ty) list option =
-    Map.find env name
+  type t_unordered =
+    (string, (string * ty) list, Base.String.comparator_witness) Base.Map.t
+
+  type t = t_ordered * t_unordered
+
+  let empty_unordered = Base.Map.empty (module Base.String)
+  let empty = empty_unordered, empty_ordered
+
+  let env_unordered = function
+    | env, _ -> env
   ;;
 
-  let mem_record (env : t) (name : string) : bool = Map.mem env name
-
-  let pp_record_env (env : t) : unit =
-    let pp_field (field_name, ty) = Format.printf "  %s : %a;" field_name pp_ty ty in
-    let pp_record (record_name, fields) =
-      Format.printf "Record: %s." record_name;
-      List.iter fields ~f:(fun field -> pp_field field);
-      Format.printf "\n"
-    in
-    Map.iteri env ~f:(fun ~key:record_name ~data:fields ->
-      pp_record (record_name, fields))
+  let env_ordered = function
+    | _, env -> env
   ;;
 
-  (* ---------------- validation of new types : detailed info below ---------------------- *)
+  let find_record env name = Base.Map.find (env_unordered env) name
+  let mem_record env name = Base.Map.mem (env_unordered env) name
+
+  (* let pp_record_env (env : t * t_ordered) : unit =
+     let env = env_ordered env in
+     let pp_field (field_name, ty) = Format.printf "  %s : %a;" field_name pp_ty ty in
+     let pp_record ((record_name, ty_var), fields) =
+     Format.printf "Record: %s %d." record_name ty_var;
+     Base.List.iter fields ~f:(fun field -> pp_field field);
+     Format.printf "\n"
+     in
+     Base.Map.iteri env ~f:(fun ~key:record_name ~data:fields ->
+     pp_record (record_name, fields))
+     ;; *)
+
+  (* ------------------- validation of new types : details below ------------------------- *)
   (* aux function for failing cases with duplicate labels: e.g. type t = {t: bool; t: int} *)
   module StringSet = Stdlib.Set.Make (String)
 
@@ -322,9 +349,6 @@ module RecordEnv = struct
       RList.fold_left ts ~init:(return ()) ~f:(fun _ t -> validate_field_type env t)
     | TList t | TOption t -> validate_field_type env t
     | TRecord name ->
-      Format.printf "name: %s\n" name;
-      pp_record_env env;
-      (* check if the record type exists in the environment *)
       if mem_record env name then return () else fail (`Undefined_type name)
   ;;
 
@@ -340,56 +364,94 @@ module RecordEnv = struct
 
   (*---------------------------------------------------------------------------------*)
 
-  let add_record (env : t) (name : string) (fields : (string * ty) list) =
+  let add_record env name fields =
     let* _ = validate_type_name env name in
     let* _ = validate_unique_labels fields in
     let* _ = validate_record_fields env fields in
-    return (Map.set env ~key:name ~data:fields)
+    let env, env_ordered =
+      match env with
+      | env, env_ordered -> env, env_ordered
+    in
+    let* ty_var = fresh in
+    return
+      ( Base.Map.set env ~key:name ~data:fields
+      , Base.Map.set env_ordered ~key:(name, ty_var) ~data:fields )
   ;;
 
-  let remove_record (env : t) (name : string) : t = Map.remove env name
-  let all_records (env : t) : (string * (string * ty) list) list = Map.to_alist env
+  let all_records_ordered env = Base.Map.to_alist (env_ordered env)
 
-  (* Retrieve a field's type from a record by name and label *)
-  let find_field (env : t) (record_name : string) (field_name : string) : ty option =
+  (* retrieve a field's type from a record by name and label *)
+  let infer_field_with_name env record_name field_name =
     match find_record env record_name with
-    | None -> None
-    | Some fields -> List.Assoc.find ~equal:String.equal fields field_name
+    | None -> fail (`Undefined_type record_name)
+    | Some fields ->
+      (match Base.List.Assoc.find ~equal:String.equal fields field_name with
+       | Some field -> return (Subst.empty, field)
+       | None -> fail (`Missing_label (record_name, field_name)))
   ;;
 
-  let compare (lst1 : (string * ty) list) (lst2 : (string * ty) list) =
-    match
-      List.for_all2 lst1 lst2 ~f:(fun (lbl1, ty1) (lbl2, ty2) ->
-        (* Format.printf "lbl1 %s: " lbl1;
-           Format.printf "ty1 %a; \n " pp_ty ty1;
-           Format.printf "lbl2 %s: " lbl2;
-           Format.printf "ty2 %a; \n " pp_ty ty2; *)
-        String.equal lbl1 lbl2 && ty_c ty1 ty2)
-    with
-    | Ok true -> true
-    | Ok false | Unequal_lengths -> false
+  let infer_field_name env s t field_name =
+    let records = all_records_ordered env in
+    let f1 acc ((name, _), fields) =
+      List.find_map
+        (fun (lbl, ty) -> if String.equal lbl field_name then Some (ty, name) else acc)
+        fields
+    in
+    match List.fold_left f1 None records with
+    | Some (ty, name) ->
+      let* s2 = Subst.unify t (Subst.apply s (TRecord name)) in
+      let* s_final = Subst.compose s s2 in
+      return (s_final, ty)
+    | None -> fail (`Missing_label ("record", field_name))
+  ;;
+
+  let infer_field_access env s t field_name =
+    match t with
+    | TRecord name -> infer_field_with_name env name field_name
+    | TVar _ -> infer_field_name env s t field_name
+    | _ -> fail (`Unification_failed (t, TRecord "record type"))
+  ;;
+
+  let compare lst1 lst2 =
+    if List.length lst1 = List.length lst2
+       && List.for_all2 (fun (lbl1, _) (lbl2, _, _) -> lbl1 = lbl2) lst1 lst2
+    then
+      List.fold_left2
+        (fun acc (_, ty1) (_, sub, ty2) ->
+          let* _ = acc in
+          let* _ = Subst.unify ty2 (Subst.apply sub ty1) in
+          acc)
+        (return true)
+        lst1
+        lst2
+    else return false
   ;;
 
   (* matching fields' signatures; if more than one type with such sig is found, the latter is given *)
-  let find_record_name env inferred_record_fields =
-    let records = all_records env in
-    let f1 acc (name, fields) =
-      if compare fields inferred_record_fields then Some name else acc
+  let infer_record env inferred_record_fields =
+    (* Format.printf " meeeow  \n"; *)
+    let records = all_records_ordered env in
+    let f1 acc ((name, _), fields) =
+      (* Format.printf " meeeow %s \n" name; *)
+      let* satisfied = compare fields inferred_record_fields in
+      if satisfied then return (Some name) else acc
     in
-    match List.fold_left records ~init:None ~f:f1 with
-    | Some name -> return (TRecord name)
+    let* name = List.fold_left f1 (return None) records in
+    match name with
+    | Some name -> return (Subst.empty, TRecord name)
     | None -> fail (`Undefined_type "no such type")
   ;;
 
   (* if some type is expected, try matching it against one of the existing *)
-  let find_record_by_name (env : t) record_name inferred_record_fields =
+  let infer_record_with_name env record_name inferred_record_fields =
     match find_record env record_name with
     | None -> fail (`Undefined_type record_name)
     | Some fields ->
-      if compare fields inferred_record_fields
+      let* satisfied = compare fields inferred_record_fields in
+      if satisfied
       then return (TRecord record_name)
       else fail (`Undefined_type "no such type")
-  ;; *)
+  ;;
 end
 
 module TypeEnv = struct
@@ -623,23 +685,9 @@ module Infer = struct
       return (final_subst, t2)
     | Elet (Non_recursive, Evalue_binding ((pattern, t_opt), e1), bindings, e2) ->
       let* s1, t1 = infer env record_env e1 in
-      (* Format.printf "t1: %a\n" pp_ty t1;
-         Format.printf "s1: %a\n" Subst.pp_subst s1;
-         Format.printf "env: %a\n" TypeEnv.pp env; *)
       let* s2, t_pat, env1 = infer_ty_pattern env (pattern, t_opt) in
-      (* Format.printf "t_pat: %a\n" pp_ty t_pat;
-         Format.printf "s2: %a\n" Subst.pp_subst s2; *)
-      (* let* s2, t2 = infer (TypeEnv.apply s1 env3) e2 in
-         let* final_subst = Subst.compose s1 s2 in
-         return (final_subst, t2) *)
-      (* let env3 = TypeEnv.exten d x t_gen env in *)
-      (* Format.printf "s2: %a\n" Subst.pp_subst s2;
-         Format.printf "t_pat: %a\n" pp_ty t_pat; *)
       let* subst1 = Subst.compose s1 s2 in
-      (* Format.printf "subst1: %a\n" Subst.pp_subst subst1; *)
-      (* Format.printf "(Subst.apply subst1 t_pat): %a\n" pp_ty (Subst.apply subst1 t_pat); *)
       let* unified_subst = unify (Subst.apply subst1 t_pat) t1 in
-      (* Format.printf "unified_subst: %a\n" Subst.pp_subst unified_subst; *)
       let initial_env = TypeEnv.apply unified_subst env1 in
       let* extended_env =
         List.fold_left
@@ -656,7 +704,6 @@ module Infer = struct
           (return initial_env)
           bindings
       in
-      (* Format.printf "initial_env: %a\n" TypeEnv.pp initial_env; *)
       let* s3, t2 = infer extended_env record_env e2 in
       let* full_subst = Subst.compose_all [ s3; unified_subst; subst1 ] in
       return (full_subst, t2)
@@ -665,15 +712,9 @@ module Infer = struct
       let* tv = fresh_var in
       let env2 = TypeEnv.extend x (S (VarSet.empty, tv)) env in
       let* s1, t1 = infer env2 record_env e1 in
-      (* Format.printf "%s\n" x;
-         Format.printf "t1: %a\n" pp_ty t1;
-         Format.printf "s1: %a\n" Subst.pp_subst s1;
-         Format.printf "env: %a\n" TypeEnv.pp env; *)
       let* s2 = unify (Subst.apply s1 tv) t1 in
       let* s_final = Subst.compose s1 s2 in
-      (* Format.printf "s_final: %a\n" Subst.pp_subst s_final; *)
       let env3 = TypeEnv.apply s_final env in
-      (* Format.printf "env3: %a\n" TypeEnv.pp env3; *)
       let* env4 =
         match t_opt with
         | Some expected_type ->
@@ -736,33 +777,11 @@ module Infer = struct
     | Eoption None ->
       let* tv = fresh_var in
       return (Subst.empty, TOption tv)
-      (* Format.printf "sub1: %a\n" Subst.pp_subst sub1;
-         Format.printf "t1: %a\n" pp_ty t1; *)
-      (* Format.printf "match: %a\n" TypeEnv.pp env; *)
-      (* Format.printf "tp: %a\n" pp_ty tp;
-         Format.printf "match2: %a\n" TypeEnv.pp env;
-         Format.printf "t: %a\n" pp_ty t; *)
-      (* Format.printf "unify: %a\n" TypeEnv.pp env; *)
-      (* Format.printf "infer: %a\n" TypeEnv.pp env; *)
-      (* Format.printf "final_subs: %a\n" Subst.pp_subst final_subs;
-         Format.printf "t: %a\n" pp_ty t;
-         Format.printf "Subst.apply final_subs t: %a\n" pp_ty (Subst.apply final_subs t);
-         Format.printf "match3: %a\n" TypeEnv.pp env; *)
     | Ematch (e, c, cl) ->
       let* sub1, t1 = infer env record_env e in
       let env = TypeEnv.apply sub1 env in
       let* tv = fresh_var in
       infer_match env record_env (c :: cl) sub1 t1 tv ~with_expr:true
-      (* RList.fold_left
-         (c :: cl)
-         ~init:(return (sub1, tv))
-         ~f:(fun (s, t) (Ast.Ecase (pat, e)) ->
-         let* sub, tp, env = infer_pattern env pat in
-         let* s2 = unify t1 tp in
-         let* sub2, t2 = infer (TypeEnv.apply sub env) record_env e in
-         let* s3 = unify t t2 in
-         let* final_subs = Subst.compose_all [ s3; sub2; s2; s ] in
-         return (final_subs, Subst.apply final_subs t)) *)
     | Efunction (c, cl) ->
       let* t1 = fresh_var in
       let* tv = fresh_var in
@@ -807,21 +826,21 @@ module Infer = struct
       let* s2 = unify t1 (Subst.apply s1 t) in
       let* s_final = Subst.compose s1 s2 in
       return (s_final, Subst.apply s2 t1)
-  (* | Erecord (record_field, record_fields) ->
-     let* inferred_record_fields =
-     RList.fold_right
-     (record_field :: record_fields)
-     ~init:(return [])
-     ~f:(fun (Ast.Erecord_field (Label name, expr)) acc ->
-     let* _, t = infer env record_env expr in
-     Format.printf " %s: " name;
-     Format.printf " %a; \n " pp_ty t;
-     return ((name, t) :: acc))
-     in
-     let* t = RecordEnv.find_record_name record_env inferred_record_fields in
-     Format.printf "t: %a; \n " pp_ty t;
-     return (Subst.empty, t)
-     | _ -> fail `Occurs_check *)
+    | Erecord (record_field, record_fields) ->
+      let* inferred_record_fields =
+        RList.fold_right
+          (record_field :: record_fields)
+          ~init:(return [])
+          ~f:(fun (Ast.Erecord_field (Label name, expr)) acc ->
+            let* s, t = infer env record_env expr in
+            return ((name, s, t) :: acc))
+      in
+      let* s, t = RecordEnv.infer_record record_env inferred_record_fields in
+      return (s, t)
+    | Efield_access (e, Label name) ->
+      let* s1, t1 = infer env record_env e in
+      let* s, t = RecordEnv.infer_field_access record_env s1 t1 name in
+      return (s, t)
 
   and infer_match env record_env cases inferred_sub inferred_t ty_var ~with_expr =
     let* s, final_t =
@@ -862,39 +881,35 @@ module Infer = struct
           let* subst = Subst.compose_all [ s3; s4; s5 ] in
           return (subst, Subst.apply subst t))
     in
-    let final_t =
-      if with_expr then final_t else TArrow (Subst.apply s inferred_t, final_t)
-    in
+    let final_t = if with_expr then final_t else Subst.apply s inferred_t @-> final_t in
     return (s, final_t)
+
+  and infer_typed_record env record_env expected_type = function
+    | Ast.Erecord (record_field, record_fields) ->
+      let* inferred_record_fields =
+        RList.fold_right
+          (record_field :: record_fields)
+          ~init:(return [])
+          ~f:(fun (Ast.Erecord_field (Label name, expr)) acc ->
+            let* s, t = infer env record_env expr in
+            return ((name, s, t) :: acc))
+      in
+      let* t =
+        RecordEnv.infer_record_with_name record_env expected_type inferred_record_fields
+      in
+      return (Subst.empty, t)
+    | _ -> return (Subst.empty, TRecord expected_type)
   ;;
 
-  (* and infer_typed_record env record_env expected_type = function
-     | Ast.Erecord (record_field, record_fields) ->
-     Format.printf "hiii \n ";
-     let* inferred_record_fields =
-     RList.fold_right
-     (record_field :: record_fields)
-     ~init:(return [])
-     ~f:(fun (Ast.Erecord_field (Label name, expr)) acc ->
-     let* _, t = infer env record_env expr in
-     Format.printf " %s: " name;
-     Format.printf " %a; \n " pp_ty t;
-     return ((name, t) :: acc))
-     in
-     let* t =
-     RecordEnv.find_record_by_name record_env expected_type inferred_record_fields
-     in
-     Format.printf "t: %a; \n " pp_ty t;
-     return (Subst.empty, t)
-     | _ -> return (Subst.empty, TRecord expected_type) *)
+  let infer_ty_opt env record_env t_opt expr =
+    match t_opt with
+    | Some expected_type ->
+      (match expected_type with
+       | TRecord t -> infer_typed_record env record_env t expr
+       | _ -> infer env record_env expr)
+    | None -> infer env record_env expr
+  ;;
 
-  (* let infer_ty_opt env record_env t_opt expr =
-     match t_opt with
-     | Some expected_type ->
-     (match expected_type with
-     | TRecord t -> infer_typed_record env record_env t expr
-     | _ -> infer env record_env expr)
-     | None -> infer env record_env expr *)
   let w expr = Result.map snd (run (infer TypeEnv.empty RecordEnv.empty expr))
 
   let infer_structure_item env record_env = function
@@ -919,7 +934,6 @@ module Infer = struct
       in
       let generalized_ty = generalize env2 (Subst.apply composed_subst inferred_ty) in
       let env = TypeEnv.extend x generalized_ty env2 in
-      (* Format.printf "composed_subst: %a\n" Subst.pp_subst composed_subst; *)
       return (composed_subst, env, record_env)
     | Ast.SValue (Recursive, value_binding, value_bindings) ->
       let all_bindings = value_binding :: value_bindings in
@@ -951,8 +965,7 @@ module Infer = struct
       in
       return (s_acc, env_ext, record_env)
     | Ast.SValue (Non_recursive, Evalue_binding ((PVar (Id x), t_opt), expr), _) ->
-      let* subst, inferred_ty = infer env record_env expr in
-      (* Format.printf "inferred_ty: %a\n" pp_ty inferred_ty; *)
+      let* subst, inferred_ty = infer_ty_opt env record_env t_opt expr in
       let* env2 =
         match t_opt with
         | Some expected_type ->
@@ -963,32 +976,27 @@ module Infer = struct
       in
       let generalized_ty = generalize env2 inferred_ty in
       let env = TypeEnv.extend x generalized_ty (TypeEnv.apply subst env) in
-      (* Format.printf "subst: %a\n" Subst.pp_subst subst; *)
       return (subst, env, record_env)
     | Ast.SValue (Non_recursive, Evalue_binding ((pattern, t_opt), expr), _) ->
-      let* subst_expr, inferred_ty = infer env record_env expr in
+      let* subst_expr, inferred_ty = infer_ty_opt env record_env t_opt expr in
       let* subst_pat, t_pat, env_pat = infer_ty_pattern env (pattern, t_opt) in
       let* combined_subst =
         let* composed = Subst.compose subst_expr subst_pat in
         return composed
       in
-      (* Format.printf "inferred_ty: %a\n" pp_ty inferred_ty;
-         Format.printf "subst_expr: %a\n" Subst.pp_subst subst_expr;
-         Format.printf "env_pat: %a\n" TypeEnv.pp env; *)
       let* unified_subst = unify (Subst.apply combined_subst t_pat) inferred_ty in
       let updated_env = TypeEnv.apply unified_subst env_pat in
       let* final_subst = Subst.compose unified_subst combined_subst in
       return (final_subst, updated_env, record_env)
+    | Ast.SType (record, field_decl, field_decls) ->
+      let fields =
+        List.map
+          (fun (Ast.Sfield_decl (Label name, t)) -> name, t)
+          (field_decl :: field_decls)
+      in
+      let* record_env = RecordEnv.add_record record_env record fields in
+      return (Subst.empty, env, record_env)
   ;;
-
-  (* | Ast.SType (record, field_decl, field_decls) ->
-     let fields =
-     List.map
-     (fun (Ast.Sfield_decl (Label name, t)) -> name, t)
-     (field_decl :: field_decls)
-     in
-     let* record_env = RecordEnv.add_record record_env record fields in
-     return (Subst.empty, env, record_env) *)
 
   let infer_structure env record_env structure =
     let rec process_structure env record_env subst = function
