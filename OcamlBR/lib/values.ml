@@ -19,9 +19,13 @@ type value =
   | VOption of value option
   | VBuiltin of builtin * environment
   | VFunction of case * case list
-(* | VRecord of string * (label * value) * (label * value) list *)
+  | VRecord of (label * value) * (label * value) list
 
 and environment = (string, value, Base.String.comparator_witness) Base.Map.t
+
+let pp_label ppf = function
+  | Label name -> Stdlib.Format.fprintf ppf "%s" name
+;;
 
 let rec pp_value ppf =
   let open Stdlib.Format in
@@ -59,6 +63,24 @@ let rec pp_value ppf =
      | Some v -> fprintf ppf "Some %a" pp_value v
      | None -> fprintf ppf "None")
   | VBuiltin _ -> fprintf ppf "<builtin>"
+  | VRecord (field, fields) ->
+    fprintf
+      ppf
+      "{ %a%a } "
+      pp_record_field
+      field
+      (fun ppf -> function
+        | [] -> ()
+        | rest ->
+          fprintf
+            ppf
+            "; %a"
+            (pp_print_list ~pp_sep:(fun ppf () -> fprintf ppf ", ") pp_record_field)
+            rest)
+      fields
+
+and pp_record_field ppf = function
+  | label, value -> Stdlib.Format.fprintf ppf "%a = %a" pp_label label pp_value value
 ;;
 
 type error =

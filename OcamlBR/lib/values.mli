@@ -17,6 +17,7 @@ type value =
   | VOption of value option
   | VBuiltin of builtin * environment
   | VFunction of Ast.case * Ast.case list
+  | VRecord of (Ast.label * value) * (Ast.label * value) list
 
 and environment = (string, value, Base.String.comparator_witness) Base.Map.t
 
