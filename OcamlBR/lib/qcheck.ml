@@ -166,6 +166,7 @@ let shrink_structure_item = function
       in
       map (fun vb' -> SValue (r, vb', vb_l)) (shrink_value_binding vb)
       <+> shrink_value_binding_length)
+  | SType _ -> Iter.empty
 ;;
 
 let shrink_structure structure : structure Iter.t =

@@ -99,10 +99,6 @@ let pEinf_op pexpr =
     (pwhitespace *> pexpr)
 ;;
 
-(* let pEinf_op =
-   pwhitespace *> pinf_op >>= fun inf_op -> return (fun e1 e2 -> Efun_application (Efun_application (Evar inf_op, e1), e2))
-   ;; *)
-
 (*-------------------------Constants/Variables-------------------------*)
 
 let pint =
@@ -303,13 +299,13 @@ let un_chain e op =
   fix (fun self -> op >>= (fun unop -> self >>= fun e -> return (unop e)) <|> e)
 ;;
 
-let rec pbody pexpr =
+(* let rec pbody pexpr =
   pty_pattern
   >>= fun p ->
   many pty_pattern
   >>= fun patterns ->
   pbody pexpr <|> (pstoken "=" *> pexpr >>| fun e -> Efun (p, patterns, e))
-;;
+;; *)
 
 let pvalue_binding pexpr =
   let opt_args =

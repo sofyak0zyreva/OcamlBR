@@ -136,7 +136,7 @@ module Subst : sig
   val compose : t -> t -> t R.t
   val compose_all : t list -> t R.t
   val remove : t -> type_var -> t
-  val pp_subst : Format.formatter -> t -> unit
+  (* val pp_subst : Format.formatter -> t -> unit *)
 end = struct
   open R
   open R.Syntax
@@ -144,10 +144,10 @@ end = struct
 
   type t = (type_var, ty, Int.comparator_witness) Map.t
 
-  let pp_subst ppf sub =
+  (* let pp_subst ppf sub =
     Base.Map.iteri sub ~f:(fun ~key ~data ->
       Stdlib.Format.fprintf ppf "[%d = %a] " key pp_ty data)
-  ;;
+  ;; *)
 
   let empty = Map.empty (module Int)
 
@@ -278,8 +278,6 @@ module KeyComparator = struct
   include Base.Comparator.Make (T)
 end
 
-let ty_c (t1 : ty) (t2 : ty) = t1 = t2
-
 module RecordEnv = struct
   open R
   open R.Syntax
@@ -292,10 +290,10 @@ module RecordEnv = struct
   type t_unordered =
     (string, (string * ty) list, Base.String.comparator_witness) Base.Map.t
 
-  type t = t_ordered * t_unordered
+  type t = t_unordered * t_ordered  
 
   let empty_unordered = Base.Map.empty (module Base.String)
-  let empty = empty_unordered, empty_ordered
+  let empty : t = empty_unordered, empty_ordered
 
   let env_unordered = function
     | env, _ -> env
@@ -364,7 +362,7 @@ module RecordEnv = struct
 
   (*---------------------------------------------------------------------------------*)
 
-  let add_record env name fields =
+  let add_record (env : t) name fields : t R.t =
     let* _ = validate_type_name env name in
     let* _ = validate_unique_labels fields in
     let* _ = validate_record_fields env fields in

@@ -43,7 +43,6 @@ let tarrow l r = TArrow (l, r)
 let ( @-> ) = tarrow
 let ttuple fst snd rest = TTuple (fst, snd, rest)
 let tlist ty = TList ty
-let trecord s = TRecord s
 
 let rec pp_ty ppf =
   let open Format in
