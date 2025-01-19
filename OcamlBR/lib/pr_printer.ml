@@ -6,28 +6,6 @@ open Base
 open Ast
 open Stdlib.Format
 open Typedtree
-(*
-   let rec pp_ty ppf typ =
-   match typ with
-   | TPrim s -> fprintf ppf "%s" s
-   | TVar _ -> fprintf ppf "int"
-   | TArrow (t1, t2) -> fprintf ppf "%a -> %a" pp_ty t1 pp_ty t2
-   | TTuple (t1, t2, rest) ->
-   let tuple_content =
-   String.concat
-   ~sep:" * "
-   (List.map ~f:(asprintf "%a" pp_ty) (t1 :: t2 :: rest))
-   in
-   fprintf ppf "(%s)" tuple_content
-   | TList t -> fprintf ppf "%a list" pp_ty t
-   | TOption t -> fprintf ppf "%a option" pp_ty t
-
-   and pp_nested_type ppf typ =
-   match typ with
-   | TArrow _ -> fprintf ppf "(%a)" pp_ty typ
-   | _ -> pp_ty ppf typ
-   ;;
-*)
 
 let pp_id ppf = function
   | Id name -> fprintf ppf "%s" name
@@ -94,9 +72,13 @@ let precedence_bin_op = function
 ;;
 
 let pp_ty_pattern ppf : Ast.ty_pattern -> unit = function
-  | p, Some t -> Format.fprintf ppf "(%a : %a)" pp_pattern p pp_ty t
-  | p, _ -> Format.fprintf ppf "%a" pp_pattern p
+  | p, Some t -> fprintf ppf "(%a : %a)" pp_pattern p pp_ty t
+  | p, _ -> fprintf ppf "%a" pp_pattern p
 ;;
+
+(* let pp_label ppf = function
+   | Label name -> fprintf ppf "%s" name
+   ;; *)
 
 let rec pp_expr ppf expr =
   let needs_parens parent_prec child_prec = child_prec < parent_prec || child_prec = -1 in
@@ -106,7 +88,7 @@ let rec pp_expr ppf expr =
   | Eif_then_else (e1, e2, None) -> fprintf ppf "if %a then %a" pp_expr e1 pp_expr e2
   | Eif_then_else (e1, e2, Some e3) ->
     fprintf ppf "if %a then %a else %a" pp_expr e1 pp_expr e2 pp_expr e3
-  | Ematch (Some exp, Ecase (first_pat, first_expr), rest_cases) ->
+  | Ematch (exp, Ecase (first_pat, first_expr), rest_cases) ->
     let case_to_string (Ecase (pat, expr)) =
       asprintf "| %a -> %a" pp_pattern pat pp_expr expr
     in
@@ -117,7 +99,7 @@ let rec pp_expr ppf expr =
          :: List.map ~f:case_to_string rest_cases)
     in
     fprintf ppf "match %a with %s" pp_expr exp case_list_str
-  | Ematch (None, Ecase (first_pat, first_expr), rest_cases) ->
+  | Efunction (Ecase (first_pat, first_expr), rest_cases) ->
     let case_to_string (Ecase (pat, expr)) =
       asprintf "| %a -> %a" pp_pattern pat pp_expr expr
     in
@@ -159,7 +141,6 @@ let rec pp_expr ppf expr =
       rest_patterns
       pp_expr
       e
-  (* | Efun (first_pattern, rest_patterns, e) -> fprintf ppf "(fun)" *)
   | Ebin_op (op, e1, e2) ->
     let op_prec = precedence_bin_op op in
     fprintf
@@ -204,8 +185,16 @@ let rec pp_expr ppf expr =
       (fun ppf e ->
         if needs_parens e then fprintf ppf "(%a)" pp_expr e else pp_expr ppf e)
       e2
-  | Econstraint (e, t) -> Format.fprintf ppf "(%a : %a)" pp_expr e pp_ty t
-(* | Eprint_int e -> fprintf ppf "print_int %a" pp_expr e *)
+  | Econstraint (e, t) -> fprintf ppf "(%a : %a)" pp_expr e pp_ty t
+(* | Efield_access (e, label) -> fprintf ppf "(%a.%a)" pp_expr e pp_label label
+  | Erecord (field, fields) ->
+    fprintf
+      ppf
+      "{ %a }"
+      (fun ppf () ->
+        fprintf ppf "%a" pp_record_field field;
+        List.iter fields ~f:(fun field' -> fprintf ppf " ; %a" pp_record_field field'))
+      () *)
 
 and precedence = function
   | Ebin_op (op, _, _) -> precedence_bin_op op
@@ -213,10 +202,14 @@ and precedence = function
 
 and pp_value_binding ppf = function
   | Evalue_binding ((pattern, None), e) ->
-    Format.fprintf ppf "%a = %a" pp_pattern pattern pp_expr e
+    fprintf ppf "%a = %a" pp_pattern pattern pp_expr e
   | Evalue_binding ((pattern, Some ty), e) ->
-    Format.fprintf ppf "%a : %a = %a" pp_pattern pattern pp_ty ty pp_expr e
+    fprintf ppf "%a : %a = %a" pp_pattern pattern pp_ty ty pp_expr e
 ;;
+
+(* and pp_record_field ppf = function
+   | Erecord_field (label, e) -> fprintf ppf "%a = %a" pp_label label pp_expr e
+   ;; *)
 
 let pp_structure_item ppf (item : structure_item) =
   match item with
@@ -232,6 +225,20 @@ let pp_structure_item ppf (item : structure_item) =
         List.iter vb_l ~f:(fun vb' -> fprintf ppf " and %a" pp_value_binding vb'))
       ()
 ;;
+
+(* | SType (name, field_decl, field_decls) ->
+    fprintf
+      ppf
+      "type %s = { %a } ;;"
+      name
+      (fun ppf () ->
+        fprintf ppf "%a" pr_field_decl field_decl;
+        List.iter field_decls ~f:(fun field_decl' ->
+          fprintf ppf " ; %a" pr_field_decl field_decl'))
+      () *)
+
+(* and pr_field_decl ppf = function
+   | Sfield_decl (label, ty) -> fprintf ppf "%a : %a" pp_label label pp_ty ty *)
 
 let pp_new_line ppf () = fprintf ppf "\n"
 
