@@ -76,9 +76,9 @@ let pp_ty_pattern ppf : Ast.ty_pattern -> unit = function
   | p, _ -> fprintf ppf "%a" pp_pattern p
 ;;
 
-(* let pp_label ppf = function
-   | Label name -> fprintf ppf "%s" name
-   ;; *)
+let pp_label ppf = function
+  | Label name -> fprintf ppf "%s" name
+;;
 
 let rec pp_expr ppf expr =
   let needs_parens parent_prec child_prec = child_prec < parent_prec || child_prec = -1 in
@@ -186,7 +186,7 @@ let rec pp_expr ppf expr =
         if needs_parens e then fprintf ppf "(%a)" pp_expr e else pp_expr ppf e)
       e2
   | Econstraint (e, t) -> fprintf ppf "(%a : %a)" pp_expr e pp_ty t
-(* | Efield_access (e, label) -> fprintf ppf "(%a.%a)" pp_expr e pp_label label
+  | Efield_access (e, label) -> fprintf ppf "%a.%a" pp_expr e pp_label label
   | Erecord (field, fields) ->
     fprintf
       ppf
@@ -194,7 +194,7 @@ let rec pp_expr ppf expr =
       (fun ppf () ->
         fprintf ppf "%a" pp_record_field field;
         List.iter fields ~f:(fun field' -> fprintf ppf " ; %a" pp_record_field field'))
-      () *)
+      ()
 
 and precedence = function
   | Ebin_op (op, _, _) -> precedence_bin_op op
@@ -205,13 +205,12 @@ and pp_value_binding ppf = function
     fprintf ppf "%a = %a" pp_pattern pattern pp_expr e
   | Evalue_binding ((pattern, Some ty), e) ->
     fprintf ppf "%a : %a = %a" pp_pattern pattern pp_ty ty pp_expr e
+
+and pp_record_field ppf = function
+  | Erecord_field (label, e) -> fprintf ppf "%a = %a" pp_label label pp_expr e
 ;;
 
-(* and pp_record_field ppf = function
-   | Erecord_field (label, e) -> fprintf ppf "%a = %a" pp_label label pp_expr e
-   ;; *)
-
-let pp_structure_item ppf (item : structure_item) =
+let rec pp_structure_item ppf (item : structure_item) =
   match item with
   | SEval e -> fprintf ppf "%a ;;" pp_expr e
   | SValue (rec_flag, vb, vb_l) ->
@@ -224,9 +223,7 @@ let pp_structure_item ppf (item : structure_item) =
         fprintf ppf "%a" pp_value_binding vb;
         List.iter vb_l ~f:(fun vb' -> fprintf ppf " and %a" pp_value_binding vb'))
       ()
-;;
-
-(* | SType (name, field_decl, field_decls) ->
+  | SType (name, field_decl, field_decls) ->
     fprintf
       ppf
       "type %s = { %a } ;;"
@@ -235,10 +232,11 @@ let pp_structure_item ppf (item : structure_item) =
         fprintf ppf "%a" pr_field_decl field_decl;
         List.iter field_decls ~f:(fun field_decl' ->
           fprintf ppf " ; %a" pr_field_decl field_decl'))
-      () *)
+      ()
 
-(* and pr_field_decl ppf = function
-   | Sfield_decl (label, ty) -> fprintf ppf "%a : %a" pp_label label pp_ty ty *)
+and pr_field_decl ppf = function
+  | Sfield_decl (label, ty) -> fprintf ppf "%a : %a" pp_label label pp_ty ty
+;;
 
 let pp_new_line ppf () = fprintf ppf "\n"
 
