@@ -29,7 +29,7 @@ type ty =
   | TTuple of ty * ty * ty list
   | TList of ty
   | TOption of ty
-(* | TRecord of string *)
+  | TRecord of string
 
 val pp_ty : Format.formatter -> ty -> unit
 val show_ty : ty -> string
@@ -58,6 +58,7 @@ type error =
   | `Duplicate_field_labels of string
   | `Undefined_type of string
   | `Multiple_definition_of_type of string
+  | `Missing_label of string * string
   ]
 
 val pp_error
@@ -70,5 +71,6 @@ val pp_error
      | `Duplicate_field_labels of string
      | `Undefined_type of string
      | `Multiple_definition_of_type of string
+     | `Missing_label of string * string
      ]
   -> unit

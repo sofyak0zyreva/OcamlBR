@@ -21,7 +21,8 @@ type ty =
   | TArrow of ty * ty
   | TTuple of ty * ty * ty list
   | TList of ty
-  | TOption of ty (* | TRecord of string *)
+  | TOption of ty
+  | TRecord of string
 [@@deriving show { with_path = false }]
 
 let gen_tprim =
@@ -42,7 +43,7 @@ let tarrow l r = TArrow (l, r)
 let ( @-> ) = tarrow
 let ttuple fst snd rest = TTuple (fst, snd, rest)
 let tlist ty = TList ty
-(* let trecord s = TRecord s *)
+let trecord s = TRecord s
 
 let rec pp_ty ppf =
   let open Format in
@@ -73,9 +74,8 @@ let rec pp_ty ppf =
     in
     fprintf ppf "(%s)" tuple_content
   | TOption t -> fprintf ppf "(%a) option" pp_ty t
+  | TRecord s -> fprintf ppf "%s" s
 ;;
-
-(* | TRecord s -> fprintf ppf "%s" s *)
 
 (* errors *)
 type error =
@@ -87,6 +87,7 @@ type error =
   | `Duplicate_field_labels of string
   | `Undefined_type of string
   | `Multiple_definition_of_type of string
+  | `Missing_label of string * string
   ]
 
 let pp_error ppf = function
@@ -100,4 +101,5 @@ let pp_error ppf = function
   | `Undefined_type s -> Format.fprintf ppf {|Undefined type: %s|} s
   | `Multiple_definition_of_type s ->
     Format.fprintf ppf {|Multiple definition of type name %s|} s
+  | `Missing_label (r, l) -> Format.fprintf ppf {|Type %s doesn't have label "%s"|} r l
 ;;
