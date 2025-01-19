@@ -159,16 +159,36 @@ end = struct
   ;;
 
   (* acceptable patterns for names *)
-  let rec validate_pattern_nonrec = function
-    | PVar _ | PAny | PConst Unit | POption (Some (PVar _)) -> true
-    | PTuple (p1, p2, rest) -> List.for_all validate_pattern_nonrec (p1 :: p2 :: rest)
-    | _ -> false
-  ;;
+  (* let rec validate_pattern_nonrec = function
+     | PVar _ | PAny | PConst Unit | POption (Some (PVar _)) -> true
+     | PTuple (p1, p2, rest) -> List.for_all validate_pattern_nonrec (p1 :: p2 :: rest)
+     | _ -> false
+     ;;
 
-  (* in rec we can only use a name *)
-  let validate_pattern_rec = function
-    | PVar _ -> true
-    | _ -> false
+     let validate_pattern_rec = function
+     | PVar _ -> true
+     | _ -> false
+     ;; *)
+
+  let validate_pattern pat flag =
+    (* in rec we can only use a name *)
+    let validate_pattern_rec = function
+      | PVar _ -> true
+      | _ -> false
+    in
+    (* acceptable patterns for names *)
+    let rec validate_pattern_nonrec = function
+      | PVar _ | PAny | PConst Unit | POption (Some (PVar _)) -> true
+      | PTuple (p1, p2, rest) -> List.for_all validate_pattern_nonrec (p1 :: p2 :: rest)
+      | _ -> false
+    in
+    match
+      match flag with
+      | Recursive -> validate_pattern_rec pat
+      | Non_recursive -> validate_pattern_nonrec pat
+    with
+    | true -> return ()
+    | false -> fail (`Ill_left_hand_side "Pattern not acceptable for variable name")
   ;;
 
   (* extract pattern from typed pattern *)
@@ -262,13 +282,11 @@ end = struct
           | _ -> fail `Type_error)
        | _ -> fail `Type_error)
     | Elet (Non_recursive, Evalue_binding ((pat, _), e1), _, e2) ->
-      if not (validate_pattern_nonrec pat)
-      then fail (`Ill_left_hand_side "Pattern not acceptable for variable name")
-      else
-        let* v = eval_expr env e1 in
-        (match match_pattern env (pat, v) with
-         | Some env' -> eval_expr env' e2
-         | None -> fail `Pattern_matching_failure)
+      let* _ = validate_pattern pat Non_recursive in
+      let* v = eval_expr env e1 in
+      (match match_pattern env (pat, v) with
+       | Some env' -> eval_expr env' e2
+       | None -> fail `Pattern_matching_failure)
     | Elet (Recursive, Evalue_binding ((pat, t), e1), [], e2) ->
       let* final_env = eval_let_rec_expr env (Evalue_binding ((pat, t), e1)) in
       eval_expr final_env e2
@@ -276,6 +294,27 @@ end = struct
       let* final_env = eval_value_bindings env (value_binding :: value_bindings) in
       eval_expr final_env e2
     | Econstraint (e, _) -> eval_expr env e
+    | Erecord (Erecord_field (label, e), fields) ->
+      let* v = eval_expr env e in
+      let* vl =
+        List.fold_right
+          (fun (Erecord_field (label, e)) acc ->
+            let* acc = acc in
+            let* v = eval_expr env e in
+            return ((label, v) :: acc))
+          fields
+          (return [])
+      in
+      return (VRecord ((label, v), vl))
+    | Efield_access (e, label) ->
+      let* v = eval_expr env e in
+      let* _, value =
+        match v with
+        | VRecord (field, fields) ->
+          return (List.find (fun (lbl, _) -> lbl = label) (field :: fields))
+        | _ -> fail `Type_error
+      in
+      return value
 
   and eval_match_expr env v = function
     | Ecase (pat, expr) :: tl ->
@@ -291,26 +330,24 @@ end = struct
 
   and eval_let_rec_expr env = function
     | Evalue_binding ((pat, _), e1) ->
-      if not (validate_pattern_rec pat)
-      then fail (`Ill_left_hand_side "Pattern not acceptable for variable name")
-      else
-        let* v = eval_expr env e1 in
-        let* rec_env =
-          match match_pattern env (pat, v) with
-          | Some new_env -> return new_env
-          | None -> fail `Pattern_matching_failure
-        in
-        let* recursive_value =
-          match v with
-          | VFun (_, p, pl, e, _) -> return (VFun (Recursive, p, pl, e, rec_env))
-          | _ -> fail `Type_error
-        in
-        let* final_env =
-          match match_pattern env (pat, recursive_value) with
-          | Some updated_env -> return updated_env
-          | None -> fail `Pattern_matching_failure
-        in
-        return final_env
+      let* _ = validate_pattern pat Non_recursive in
+      let* v = eval_expr env e1 in
+      let* rec_env =
+        match match_pattern env (pat, v) with
+        | Some new_env -> return new_env
+        | None -> fail `Pattern_matching_failure
+      in
+      let* recursive_value =
+        match v with
+        | VFun (_, p, pl, e, _) -> return (VFun (Recursive, p, pl, e, rec_env))
+        | _ -> fail `Type_error
+      in
+      let* final_env =
+        match match_pattern env (pat, recursive_value) with
+        | Some updated_env -> return updated_env
+        | None -> fail `Pattern_matching_failure
+      in
+      return final_env
 
   and eval_value_bindings env value_bindings =
     let bindings = List.map (fun (Evalue_binding ((p, _), e)) -> p, e) value_bindings in
@@ -341,19 +378,18 @@ end = struct
       let* _ = eval_expr env e in
       return env
     | SValue (Non_recursive, Evalue_binding ((pat, _), e), _) ->
-      if not (validate_pattern_nonrec pat)
-      then fail (`Ill_left_hand_side "Pattern not acceptable for variable name")
-      else
-        let* v = eval_expr env e in
-        (match match_pattern env (pat, v) with
-         | Some env' -> return env'
-         | None -> fail `Pattern_matching_failure)
+      let* _ = validate_pattern pat Non_recursive in
+      let* v = eval_expr env e in
+      (match match_pattern env (pat, v) with
+       | Some env' -> return env'
+       | None -> fail `Pattern_matching_failure)
     | SValue (Recursive, Evalue_binding ((pat, t), e), []) ->
       let* final_env = eval_let_rec_expr env (Evalue_binding ((pat, t), e)) in
       return final_env
     | SValue (Recursive, value_binding, value_bindings) ->
       let* final_env = eval_value_bindings env (value_binding :: value_bindings) in
       return final_env
+    | SType _ -> return env
   ;;
 
   let eval_structure (structure : structure) =
@@ -391,11 +427,3 @@ let pp_env env_t env_v =
     env_v;
   printf "}\n"
 ;;
-
-(* let print_env env =
-  let open Stdlib.Format in
-  printf "\n{\n";
-  Base.Map.iteri env ~f:(fun ~key ~data ->
-    if key <> "print_int" then printf "%s = %a\n" key pp_value data);
-  printf "}\n"
-;; *)

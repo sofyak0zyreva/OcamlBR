@@ -656,3 +656,211 @@ let%expect_test "016lists" =
     val map : (int -> (int * int)) -> (int list -> (int * int) list) = <fun>
     } |}]
 ;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type t = { aa: int; bb: bool }
+      type s = { aa: string; cc: int } 
+      let m = { aa = 4; bb = true }
+      let n = { aa = "hello"; cc = 100 }
+  |}
+  in
+  [%expect
+    {|
+    {
+    val m : t = { aa = 4; bb = true }
+    val n : s = { aa = "hello"; cc = 100 }
+    } |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type t = { aa: int; bb: bool }
+      let n = { aa = "hello"; bb = 100 }
+  |}
+  in
+  [%expect {| Infer error: Unification failed on string and int |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type t = { aa: int; bb: bool }
+      type t = { aa: string; cc: int } 
+  |}
+  in
+  [%expect {| Infer error: Multiple definition of type name t |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type t = { aa: int; bb: bool }
+      let m = { aa = 4; bb = true }
+      let n = m.cc
+  |}
+  in
+  [%expect {| Infer error: Type t doesn't have label "cc" |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type t = { aa: int; bb: bool }
+      let n = { zz = "hello"; ww = 100 }
+  |}
+  in
+  [%expect {| Infer error: Undefined type: no such type |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type t = { aa: int; bb: bool }
+      type t = { aa: string; cc: int } 
+  |}
+  in
+  [%expect {| Infer error: Multiple definition of type name t |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type t = { aa: int; bb: bool }
+      type s = { aa: string; bb: int } 
+      let m : t = { aa = 4; bb = true }
+      let n = { aa = "hello"; bb = 100 }
+  |}
+  in
+  [%expect
+    {|
+    {
+    val m : t = { aa = 4; bb = true }
+    val n : s = { aa = "hello"; bb = 100 }
+    } |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type t = { aa: int; bb: bool }
+      type s = { aa: string; cc: int }
+      let f (x : t) = x.aa
+      let g (x : s) = x.aa
+      let h x = x.aa
+  |}
+  in
+  [%expect
+    {|
+    {
+    val f : t -> int = <fun>
+    val g : s -> string = <fun>
+    val h : s -> string = <fun>
+    } |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type old = { aa: bool option; bb: int option }
+      type new = { aa: bool option; bb: string option }
+      let x = { aa = Some false ; bb = None }
+      let y = x.bb
+  |}
+  in
+  [%expect
+    {|
+    {
+    val x : new = { aa = Some false; bb = None }
+    val y : (string) option = None
+    } |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type d = { aa: int}
+      type t = { aa: int; bb: bool }
+      type nested = {raz: t; dva: d}
+      let a = { raz = { aa = 4; bb = true}; dva = {aa = 10} }
+      let b = { aa = 100; bb = not false }
+      let c = (b.aa + a.raz.aa) / a.dva.aa
+      let d = ((a: nested).dva: d).aa
+  |}
+  in
+  [%expect
+    {|
+    {
+    val a : nested = { raz = { aa = 4; bb = true } ; dva = { aa = 10 }  }
+    val b : t = { aa = 100; bb = true }
+    val c : int = 10
+    val d : int = 10
+    } |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type inner = { x : int }
+      type outer = { x : string; inner : inner }
+      let x = { x = "string" ; inner = { x = 34 } }
+      let y = if x.inner.x > 100 then print_int x.inner.x else print_endline x.x
+  |}
+  in
+  [%expect
+    {|
+    string
+
+    {
+    val x : outer = { x = "string"; inner = { x = 34 }  }
+    val y : unit = ()
+    } |}]
+;;
+
+let%expect_test _ =
+  let _ =
+    test_interpret
+      {|
+      type d = { aa: int }
+      type old = { aa: int list -> int ; bb: string option }
+      type new = { aa: int; bb: bool }
+      let f = fun x -> x
+      let g x = 
+        (match x with
+        | [] -> 0
+        | hd :: snd :: tl -> hd
+        | h::tl -> 1)
+      let m = { aa = g [5; 13; 92] ; bb = f (not true) } 
+      let p : old = { aa = g ; bb = Some "hello" }
+      type k = { s : old; z : new }
+      let i = { s = p; z = m }
+      let f x = x.aa
+      let h (x : old) = x.aa
+      let r = f m + p.aa [1; 3; 5; 7]
+  |}
+  in
+  [%expect
+    {|
+    {
+    val f : new -> int = <fun>
+    val g : int list -> int = <fun>
+    val h : old -> (int list -> int) = <fun>
+    val i : k = { s = { aa = <fun>; bb = Some "hello" } ; z = { aa = 5; bb = false }  }
+    val m : new = { aa = 5; bb = false }
+    val p : old = { aa = <fun>; bb = Some "hello" }
+    val r : int = 6
+    } |}]
+;;
