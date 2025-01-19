@@ -300,12 +300,12 @@ let un_chain e op =
 ;;
 
 (* let rec pbody pexpr =
-  pty_pattern
-  >>= fun p ->
-  many pty_pattern
-  >>= fun patterns ->
-  pbody pexpr <|> (pstoken "=" *> pexpr >>| fun e -> Efun (p, patterns, e))
-;; *)
+   pty_pattern
+   >>= fun p ->
+   many pty_pattern
+   >>= fun patterns ->
+   pbody pexpr <|> (pstoken "=" *> pexpr >>| fun e -> Efun (p, patterns, e))
+   ;; *)
 
 let pvalue_binding pexpr =
   let opt_args =

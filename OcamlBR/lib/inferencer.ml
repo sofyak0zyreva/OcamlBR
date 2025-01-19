@@ -145,9 +145,9 @@ end = struct
   type t = (type_var, ty, Int.comparator_witness) Map.t
 
   (* let pp_subst ppf sub =
-    Base.Map.iteri sub ~f:(fun ~key ~data ->
-      Stdlib.Format.fprintf ppf "[%d = %a] " key pp_ty data)
-  ;; *)
+     Base.Map.iteri sub ~f:(fun ~key ~data ->
+     Stdlib.Format.fprintf ppf "[%d = %a] " key pp_ty data)
+     ;; *)
 
   let empty = Map.empty (module Int)
 
@@ -290,7 +290,7 @@ module RecordEnv = struct
   type t_unordered =
     (string, (string * ty) list, Base.String.comparator_witness) Base.Map.t
 
-  type t = t_unordered * t_ordered  
+  type t = t_unordered * t_ordered
 
   let empty_unordered = Base.Map.empty (module Base.String)
   let empty : t = empty_unordered, empty_ordered
