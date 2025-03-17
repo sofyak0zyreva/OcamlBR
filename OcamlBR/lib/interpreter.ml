@@ -68,16 +68,14 @@ end = struct
     | _ -> None
 
   and match_list_pattern env patterns values =
-    (* to avoid Invalid argument exception *)
-    if List.length patterns <> List.length values
-    then None
-    else (
-      let f1 acc p v =
-        match acc with
-        | None -> None
-        | Some env' -> match_pattern env' (p, v)
-      in
-      List.fold_left2 f1 (Some env) patterns values)
+    let f1 acc p v =
+      match acc with
+      | None -> None
+      | Some env' -> match_pattern env' (p, v)
+    in
+    match Base.List.fold2 patterns values ~f:f1 ~init:(Some env) with
+    | Unequal_lengths -> None
+    | Ok rez -> rez
   ;;
 
   (* let print_env env =
@@ -134,21 +132,20 @@ end = struct
     | _ -> fail `Type_error
 
   and eval_eq_list op l1 l2 =
-    if List.length l1 <> List.length l2
-    then return (VBool false)
-    else (
-      let f1 acc el1 el2 =
-        let* acc = acc in
-        match acc with
-        | VBool false -> return (VBool false)
-        | VBool true ->
-          let* res = eval_bin_op (op, el1, el2) in
-          (match res with
-           | VBool true -> return (VBool true)
-           | _ -> return (VBool false))
-        | _ -> fail `Type_error
-      in
-      List.fold_left2 f1 (return (VBool true)) l1 l2)
+    let f1 acc el1 el2 =
+      let* acc = acc in
+      match acc with
+      | VBool false -> return (VBool false)
+      | VBool true ->
+        let* res = eval_bin_op (op, el1, el2) in
+        (match res with
+         | VBool true -> return (VBool true)
+         | _ -> return (VBool false))
+      | _ -> fail `Type_error
+    in
+    match Base.List.fold2 l1 l2 ~f:f1 ~init:(return (VBool true)) with
+    | Unequal_lengths -> return (VBool false)
+    | Ok rez -> rez
   ;;
 
   let eval_const = function
@@ -157,26 +154,6 @@ end = struct
     | Bool b -> return (VBool b)
     | Unit -> return VUnit
   ;;
-
-  (* acceptable patterns for names *)
-  let rec validate_pattern_nonrec = function
-    | PVar _ | PAny | PConst Unit | POption (Some (PVar _)) -> true
-    | PTuple (p1, p2, rest) -> List.for_all validate_pattern_nonrec (p1 :: p2 :: rest)
-    | _ -> false
-  ;;
-
-  (* in rec we can only use a name *)
-  let validate_pattern_rec = function
-    | PVar _ -> true
-    | _ -> false
-  ;;
-
-  (* extract pattern from typed pattern *)
-  let get_pattern = function
-    | pat, _ -> pat
-  ;;
-
-  let get_patterns tpl = List.map get_pattern tpl
 
   let rec eval_expr env = function
     | Econst c -> eval_const c
@@ -232,8 +209,7 @@ end = struct
       let* v = eval_expr env e in
       eval_match_expr env v (c :: cl)
     | Efunction (c, cl) -> return (VFunction (c, cl))
-    | Efun (tp, tpl, e) ->
-      return (VFun (Non_recursive, get_pattern tp, get_patterns tpl, e, env))
+    | Efun (tp, tpl, e) -> return (VFun (Non_recursive, tp, tpl, e, env))
     | Efun_application (e1, e2) ->
       let* v1 = eval_expr env e1 in
       let* v2 = eval_expr env e2 in
@@ -251,7 +227,7 @@ end = struct
              | p :: pl -> return (VFun (Non_recursive, p, pl, body, env')))
           | None -> fail `Pattern_matching_failure)
        | VFunction (case, case_l) -> eval_match_expr env v2 (case :: case_l)
-       | VBuiltin (builtin, _) ->
+       | VBuiltin builtin ->
          (match builtin, v2 with
           | BInt b, VInt i ->
             b i;
@@ -261,17 +237,11 @@ end = struct
             return VUnit
           | _ -> fail `Type_error)
        | _ -> fail `Type_error)
-    | Elet (Non_recursive, Evalue_binding ((pat, _), e1), _, e2) ->
-      if not (validate_pattern_nonrec pat)
-      then fail (`Ill_left_hand_side "Pattern not acceptable for variable name")
-      else
-        let* v = eval_expr env e1 in
-        (match match_pattern env (pat, v) with
-         | Some env' -> eval_expr env' e2
-         | None -> fail `Pattern_matching_failure)
-    | Elet (Recursive, Evalue_binding ((pat, t), e1), [], e2) ->
-      let* final_env = eval_let_rec_expr env (Evalue_binding ((pat, t), e1)) in
-      eval_expr final_env e2
+    | Elet (Non_recursive, Evalue_binding (pat, e1), _, e2) ->
+      let* v = eval_expr env e1 in
+      (match match_pattern env (pat, v) with
+       | Some env' -> eval_expr env' e2
+       | None -> fail `Pattern_matching_failure)
     | Elet (Recursive, value_binding, value_bindings, e2) ->
       let* final_env = eval_value_bindings env (value_binding :: value_bindings) in
       eval_expr final_env e2
@@ -289,39 +259,15 @@ end = struct
        | None -> eval_match_expr env v tl)
     | [] -> fail `Pattern_matching_failure
 
-  and eval_let_rec_expr env = function
-    | Evalue_binding ((pat, _), e1) ->
-      if not (validate_pattern_rec pat)
-      then fail (`Ill_left_hand_side "Pattern not acceptable for variable name")
-      else
-        let* v = eval_expr env e1 in
-        let* rec_env =
-          match match_pattern env (pat, v) with
-          | Some new_env -> return new_env
-          | None -> fail `Pattern_matching_failure
-        in
-        let* recursive_value =
-          match v with
-          | VFun (_, p, pl, e, _) -> return (VFun (Recursive, p, pl, e, rec_env))
-          | _ -> fail `Type_error
-        in
-        let* final_env =
-          match match_pattern env (pat, recursive_value) with
-          | Some updated_env -> return updated_env
-          | None -> fail `Pattern_matching_failure
-        in
-        return final_env
-
   and eval_value_bindings env value_bindings =
-    let bindings = List.map (fun (Evalue_binding ((p, _), e)) -> p, e) value_bindings in
+    let bindings = List.map (fun (Evalue_binding (p, e)) -> p, e) value_bindings in
     (* extend env with all names in mutual recursion *)
     let rec update_env acc_env = function
       | [] -> return acc_env
       | (PVar (Id name), expr) :: tl ->
         let* value =
           match expr with
-          | Efun (p, pl, e) ->
-            return (VFun (Recursive, get_pattern p, get_patterns pl, e, acc_env))
+          | Efun (p, pl, e) -> return (VFun (Recursive, p, pl, e, acc_env))
           | _ -> eval_expr acc_env expr
         in
         (* update env so all names in mutual recursion correspond to their real values *)
@@ -334,23 +280,17 @@ end = struct
   ;;
 
   let eval_str_item env str_item =
-    let env = extend env "print_int" (VBuiltin (BInt print_int, env)) in
-    let env = extend env "print_endline" (VBuiltin (BString print_endline, env)) in
+    let env = extend env "print_int" (VBuiltin (BInt print_int)) in
+    let env = extend env "print_endline" (VBuiltin (BString print_endline)) in
     match str_item with
     | SEval e ->
       let* _ = eval_expr env e in
       return env
-    | SValue (Non_recursive, Evalue_binding ((pat, _), e), _) ->
-      if not (validate_pattern_nonrec pat)
-      then fail (`Ill_left_hand_side "Pattern not acceptable for variable name")
-      else
-        let* v = eval_expr env e in
-        (match match_pattern env (pat, v) with
-         | Some env' -> return env'
-         | None -> fail `Pattern_matching_failure)
-    | SValue (Recursive, Evalue_binding ((pat, t), e), []) ->
-      let* final_env = eval_let_rec_expr env (Evalue_binding ((pat, t), e)) in
-      return final_env
+    | SValue (Non_recursive, Evalue_binding (pat, e), _) ->
+      let* v = eval_expr env e in
+      (match match_pattern env (pat, v) with
+       | Some env' -> return env'
+       | None -> fail `Pattern_matching_failure)
     | SValue (Recursive, value_binding, value_bindings) ->
       let* final_env = eval_value_bindings env (value_binding :: value_bindings) in
       return final_env

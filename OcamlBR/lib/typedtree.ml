@@ -37,10 +37,8 @@ let tprim_int = TPrim "int"
 let tprim_string = TPrim "string"
 let tprim_bool = TPrim "bool"
 let tprim_unit = TPrim "unit"
-let tvar x = TVar x
 let tarrow l r = TArrow (l, r)
 let ( @-> ) = tarrow
-let ttuple fst snd rest = TTuple (fst, snd, rest)
 let tlist ty = TList ty
 (* let trecord s = TRecord s *)
 
@@ -79,19 +77,20 @@ let rec pp_ty ppf =
 
 (* errors *)
 type error =
-  [ `Occurs_check
+  [ `Occurs_check of string * ty
   | `Undefined_variable of string
   | `Unification_failed of ty * ty
-  | `Ill_left_hand_side of string
-  | `Ill_right_hand_side of string
+  | `Ill_left_hand_side of string (* e.g. let 0 = 1, let rec (a, b) = <..> *)
+  | `Ill_right_hand_side of string (* e.g. let rec x = x + 1 *)
   | `Duplicate_field_labels of string
   | `Undefined_type of string
   | `Multiple_definition_of_type of string
+  | `Unexpected_function_type of ty
   ]
 
 let pp_error ppf = function
-  | `Occurs_check -> Format.fprintf ppf {|Occurs check failed|}
-  | `Undefined_variable s -> Format.fprintf ppf {|Undefined variable "%s"|} s
+  | `Occurs_check (s, t) -> Format.fprintf ppf {|Occurs check failed: %s %a|} s pp_ty t
+  | `Undefined_variable s -> Format.fprintf ppf {|Undefined variable %S|} s
   | `Unification_failed (l, r) ->
     Format.fprintf ppf {|Unification failed on %a and %a|} pp_ty l pp_ty r
   | `Ill_left_hand_side s -> Format.fprintf ppf {|Ill left-hand side %s|} s
@@ -100,4 +99,6 @@ let pp_error ppf = function
   | `Undefined_type s -> Format.fprintf ppf {|Undefined type: %s|} s
   | `Multiple_definition_of_type s ->
     Format.fprintf ppf {|Multiple definition of type name %s|} s
+  | `Unexpected_function_type t ->
+    Format.fprintf ppf {|Expected function type, got: %a|} pp_ty t
 ;;

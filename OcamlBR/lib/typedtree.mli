@@ -1,6 +1,7 @@
 (** Copyright 2024, Sofya Kozyreva, Maksim Shipilov *)
 
 (** SPDX-License-Identifier: LGPL-3.0-or-later *)
+
 type type_var = int
 
 val pp_type_var : Format.formatter -> type_var -> unit
@@ -43,14 +44,12 @@ val tprim_int : ty
 val tprim_string : ty
 val tprim_bool : ty
 val tprim_unit : ty
-val tvar : type_var -> ty
 val tarrow : ty -> ty -> ty
 val ( @-> ) : ty -> ty -> ty
-val ttuple : ty -> ty -> ty list -> ty
 val tlist : ty -> ty
 
 type error =
-  [ `Occurs_check
+  [ `Occurs_check of string * ty
   | `Undefined_variable of string
   | `Unification_failed of ty * ty
   | `Ill_left_hand_side of string
@@ -58,11 +57,12 @@ type error =
   | `Duplicate_field_labels of string
   | `Undefined_type of string
   | `Multiple_definition_of_type of string
+  | `Unexpected_function_type of ty
   ]
 
 val pp_error
   :  Format.formatter
-  -> [< `Occurs_check
+  -> [< `Occurs_check of string * ty
      | `Undefined_variable of string
      | `Unification_failed of ty * ty
      | `Ill_left_hand_side of string
@@ -70,5 +70,6 @@ val pp_error
      | `Duplicate_field_labels of string
      | `Undefined_type of string
      | `Multiple_definition_of_type of string
+     | `Unexpected_function_type of ty
      ]
   -> unit
